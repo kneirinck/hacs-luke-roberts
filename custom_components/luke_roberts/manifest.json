@@ -1,0 +1,27 @@
+{
+  "domain": "luke_roberts",
+  "name": "Luke Roberts Luvo BLE",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "service_uuid": "44092840-0567-11e6-b862-0002a5d5c51b"
+    }
+  ],
+  "codeowners": [
+    "@kneirinck"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://www.home-assistant.io/integrations/luke_roberts",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "loggers": [
+    "luke_roberts"
+  ],
+  "requirements": [
+    "bleak-retry-connector==3.5.0"
+  ],
+  "version": "0.0.1"
+}
