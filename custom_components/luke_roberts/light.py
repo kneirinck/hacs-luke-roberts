@@ -12,7 +12,12 @@ import bleak_retry_connector
 
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
-from homeassistant.components.light import ATTR_EFFECT, LightEntity, LightEntityFeature
+from homeassistant.components.light import (
+    ATTR_EFFECT,
+    LightEntity,
+    LightEntityFeature,
+    ColorMode,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -42,11 +47,12 @@ class LukeRobertsLuvoBleLight(LightEntity):
     EFFECT_ID_OFF = 0
 
     _attr_supported_features = LightEntityFeature(LightEntityFeature.EFFECT)
+    _attr_color_mode = ColorMode.ONOFF
+    _attr_supported_color_modes = {ColorMode.ONOFF}
 
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialize an LukeRobertsLuvoBleLight."""
         self._state = None
-        self._brightness = None
         self._ble_device = ble_device
         self._device: BleakClient | None = None
         self._attr_unique_id = ble_device.address
@@ -81,11 +87,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         return self._effect_map.get(self._effect) != 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Instruct the light to turn on.
-
-        You can skip the brightness part if your light does not support
-        brightness control.
-        """
+        """Instruct the light to turn on."""
 
         if ATTR_EFFECT in kwargs:
             effect_name = kwargs.get(ATTR_EFFECT)
@@ -97,6 +99,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 self._effect = effect_name
         else:
             await self._set_effect(self.EFFECT_ID_DEFAULT)
+
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Instruct the light to turn off."""
