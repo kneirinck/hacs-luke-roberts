@@ -37,7 +37,7 @@ async def async_setup_entry(
     ble_device = bluetooth.async_ble_device_from_address(
         hass, entry.unique_id.upper(), True
     )
-    async_add_entities([LukeRobertsLuvoBleLight(ble_device)])
+    async_add_entities([LukeRobertsLuvoBleLight(ble_device)], update_before_add=True)
 
 
 class LukeRobertsLuvoBleLight(LightEntity):
