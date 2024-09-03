@@ -60,7 +60,6 @@ class LukeRobertsLuvoBleLight(LightEntity):
         self._effect_map: dict[str, int] = {}
         self._effect = None
 
-        print("INIT", ble_device.address, self.unique_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.unique_id)},
             manufacturer="Luke Roberts",
