@@ -19,6 +19,7 @@ from homeassistant.components.light import (
     ColorMode,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -37,6 +38,10 @@ async def async_setup_entry(
     ble_device = bluetooth.async_ble_device_from_address(
         hass, entry.unique_id.upper(), True
     )
+    if not ble_device:
+        raise ConfigEntryNotReady(
+            f"Unable to find device with address {entry.uniuqe_id}, ensure it's powered on"
+        )
     async_add_entities([LukeRobertsLuvoBleLight(ble_device)], update_before_add=True)
 
 
