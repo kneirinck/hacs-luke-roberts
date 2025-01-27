@@ -40,7 +40,7 @@ async def async_setup_entry(
     )
     if not ble_device:
         raise ConfigEntryNotReady(
-            f"Unable to find device with address {entry.uniuqe_id}, ensure it's powered on"
+            f"Unable to find device with address {entry.unique_id}, ensure it's powered on"
         )
     async_add_entities([LukeRobertsLuvoBleLight(ble_device)], update_before_add=True)
 
