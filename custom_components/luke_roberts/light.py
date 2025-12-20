@@ -13,7 +13,10 @@ import bleak_retry_connector
 from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
+    ATTR_HS_COLOR,
     LightEntity,
     LightEntityFeature,
     ColorMode,
@@ -51,9 +54,15 @@ class LukeRobertsLuvoBleLight(LightEntity):
     EFFECT_ID_DEFAULT = 255
     EFFECT_ID_OFF = 0
 
+    # Kelvin range for the downlight (from API docs)
+    MIN_KELVIN = 2700
+    MAX_KELVIN = 4000
+
     _attr_supported_features = LightEntityFeature(LightEntityFeature.EFFECT)
-    _attr_color_mode = ColorMode.ONOFF
-    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_color_mode = ColorMode.HS
+    _attr_supported_color_modes = {ColorMode.HS, ColorMode.COLOR_TEMP}
+    _attr_min_color_temp_kelvin = 2700
+    _attr_max_color_temp_kelvin = 4000
 
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialize an LukeRobertsLuvoBleLight."""
@@ -64,6 +73,13 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
         self._effect_map: dict[str, int] = {}
         self._effect = None
+
+        # Brightness (0-255 for HA, we'll convert to 0-100 for API)
+        self._brightness: int = 255
+        # HS color for uplight (top) - hue 0-360, saturation 0-100
+        self._hs_color: tuple[float, float] = (0.0, 0.0)
+        # Color temperature in Kelvin for downlight (bottom)
+        self._color_temp_kelvin: int = 3350
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self.unique_id)},
@@ -83,6 +99,21 @@ class LukeRobertsLuvoBleLight(LightEntity):
         return self._effect
 
     @property
+    def brightness(self) -> int | None:
+        """Return the brightness of this light between 0..255."""
+        return self._brightness
+
+    @property
+    def hs_color(self) -> tuple[float, float] | None:
+        """Return the hue and saturation color value [float, float]."""
+        return self._hs_color
+
+    @property
+    def color_temp_kelvin(self) -> int | None:
+        """Return the color temperature in Kelvin."""
+        return self._color_temp_kelvin
+
+    @property
     def is_on(self) -> bool | None:
         """Return true if light is on."""
         _LOGGER.info(
@@ -92,7 +123,9 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Instruct the light to turn on."""
+        _LOGGER.info("Turn on called with kwargs: %s", kwargs)
 
+        # Handle effect selection
         if ATTR_EFFECT in kwargs:
             effect_name = kwargs.get(ATTR_EFFECT)
             effect_id = self._effect_map.get(effect_name)
@@ -101,7 +134,40 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
             if await self._set_effect(effect_id):
                 self._effect = effect_name
-        else:
+            return
+
+        # Handle brightness
+        if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
+            # Convert 0-255 to 0-100 for the API
+            brightness_percent = int((self._brightness / 255) * 100)
+            await self._set_brightness(brightness_percent)
+
+        # Handle HS color (uplight/top)
+        if ATTR_HS_COLOR in kwargs:
+            self._hs_color = kwargs[ATTR_HS_COLOR]
+            self._attr_color_mode = ColorMode.HS
+            await self._set_uplight_color(
+                hue=self._hs_color[0],
+                saturation=self._hs_color[1],
+                brightness=self._brightness
+            )
+
+        # Handle color temperature (downlight/bottom)
+        if ATTR_COLOR_TEMP_KELVIN in kwargs:
+            self._color_temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            # Clamp to valid range
+            self._color_temp_kelvin = max(
+                self.MIN_KELVIN, min(self.MAX_KELVIN, self._color_temp_kelvin)
+            )
+            self._attr_color_mode = ColorMode.COLOR_TEMP
+            await self._set_downlight_color_temp(
+                kelvin=self._color_temp_kelvin,
+                brightness=self._brightness
+            )
+
+        # If no specific attributes, just turn on with default scene
+        if not any(k in kwargs for k in [ATTR_EFFECT, ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_COLOR_TEMP_KELVIN]):
             await self._set_effect(self.EFFECT_ID_DEFAULT)
 
 
@@ -184,3 +250,95 @@ class LukeRobertsLuvoBleLight(LightEntity):
             if id == effect_id:
                 return name
         return None
+
+    async def _set_brightness(self, brightness_percent: int) -> bool:
+        """Set the brightness of the lamp (0-100%)."""
+        _LOGGER.info("Setting brightness to %d%%", brightness_percent)
+        self._device = await bleak_retry_connector.establish_connection(
+            BleakClient, self._ble_device, self.unique_id
+        )
+        # Command: A0 01 03 PP (Modify Brightness)
+        # PP = brightness in percent 0-100
+        command = bytes([0xA0, 0x01, 0x03, brightness_percent])
+        response = await self._send_and_await_response(data=command)
+        return response[0] == 0x00 if response else False
+
+    async def _set_uplight_color(self, hue: float, saturation: float, brightness: int) -> bool:
+        """Set the uplight (top) color using HSB.
+
+        Args:
+            hue: 0-360 degrees
+            saturation: 0-100 percent
+            brightness: 0-255 (HA brightness)
+        """
+        _LOGGER.info("Setting uplight color: hue=%f, sat=%f, bright=%d", hue, saturation, brightness)
+        self._device = await bleak_retry_connector.establish_connection(
+            BleakClient, self._ble_device, self.unique_id
+        )
+
+        # Convert hue from 0-360 to 0-65535
+        hue_int = int((hue / 360) * 65535)
+        hue_bytes = hue_int.to_bytes(2, byteorder='big')
+
+        # Convert saturation from 0-100 to 0-255
+        saturation_byte = int((saturation / 100) * 255)
+
+        # Convert brightness from 0-255 HA to 0-255 API
+        brightness_byte = brightness
+
+        # Duration: 0 for infinite
+        duration_bytes = (0).to_bytes(2, byteorder='big')
+
+        # Command: A0 01 02 XX DD DD SS HH HH BB
+        # XX = 0x01 (uplight flag)
+        # DD DD = duration in ms
+        # SS = saturation 0-255
+        # HH HH = hue 0-65535
+        # BB = brightness 0-255
+        command = bytes([
+            0xA0, 0x01, 0x02, 0x01,  # Prefix, version, opcode, flags
+            duration_bytes[0], duration_bytes[1],  # Duration
+            saturation_byte,  # Saturation
+            hue_bytes[0], hue_bytes[1],  # Hue
+            brightness_byte  # Brightness
+        ])
+
+        response = await self._send_and_await_response(data=command)
+        return response[0] == 0x00 if response else False
+
+    async def _set_downlight_color_temp(self, kelvin: int, brightness: int) -> bool:
+        """Set the downlight (bottom) color temperature.
+
+        Args:
+            kelvin: 2700-4000 Kelvin
+            brightness: 0-255 (HA brightness)
+        """
+        _LOGGER.info("Setting downlight color temp: kelvin=%d, bright=%d", kelvin, brightness)
+        self._device = await bleak_retry_connector.establish_connection(
+            BleakClient, self._ble_device, self.unique_id
+        )
+
+        # Clamp kelvin to valid range
+        kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
+        kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
+
+        # Convert brightness from 0-255 HA to 0-255 API
+        brightness_byte = brightness
+
+        # Duration: 0 for infinite
+        duration_bytes = (0).to_bytes(2, byteorder='big')
+
+        # Command: A0 01 02 XX DD DD KK KK BB
+        # XX = 0x02 (downlight flag)
+        # DD DD = duration in ms
+        # KK KK = kelvin 2700-4000
+        # BB = brightness 0-255
+        command = bytes([
+            0xA0, 0x01, 0x02, 0x02,  # Prefix, version, opcode, flags
+            duration_bytes[0], duration_bytes[1],  # Duration
+            kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
+            brightness_byte  # Brightness
+        ])
+
+        response = await self._send_and_await_response(data=command)
+        return response[0] == 0x00 if response else False
