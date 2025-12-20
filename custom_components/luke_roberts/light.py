@@ -342,3 +342,59 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
         response = await self._send_and_await_response(data=command)
         return response[0] == 0x00 if response else False
+
+    async def _set_both_lights(
+        self,
+        hue: float,
+        saturation: float,
+        uplight_brightness: int,
+        kelvin: int,
+        downlight_brightness: int
+    ) -> bool:
+        """Set both uplight and downlight in a single BLE command.
+
+        Args:
+            hue: 0-360 degrees (for uplight)
+            saturation: 0-100 percent (for uplight)
+            uplight_brightness: 0-255 (for uplight)
+            kelvin: 2700-4000 Kelvin (for downlight)
+            downlight_brightness: 0-255 (for downlight)
+        """
+        _LOGGER.info(
+            "Setting both lights: hue=%f, sat=%f, up_bright=%d, kelvin=%d, down_bright=%d",
+            hue, saturation, uplight_brightness, kelvin, downlight_brightness
+        )
+        self._device = await bleak_retry_connector.establish_connection(
+            BleakClient, self._ble_device, self.unique_id
+        )
+
+        # Uplight parameters
+        hue_int = int((hue / 360) * 65535)
+        hue_bytes = hue_int.to_bytes(2, byteorder='big')
+        saturation_byte = int((saturation / 100) * 255)
+
+        # Downlight parameters
+        kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
+        kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
+
+        # Duration: 0 for infinite
+        duration_bytes = (0).to_bytes(2, byteorder='big')
+
+        # Command: A0 01 02 03 DD DD SS HH HH BB KK KK BB
+        # Flag 0x03 = uplight (0x01) + downlight (0x02)
+        # First sub-packet: uplight (SS HH HH BB)
+        # Second sub-packet: downlight (KK KK BB)
+        command = bytes([
+            0xA0, 0x01, 0x02, 0x03,  # Prefix, version, opcode, flags (both)
+            duration_bytes[0], duration_bytes[1],  # Duration
+            # Uplight sub-packet
+            saturation_byte,  # Saturation
+            hue_bytes[0], hue_bytes[1],  # Hue
+            uplight_brightness,  # Uplight brightness
+            # Downlight sub-packet
+            kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
+            downlight_brightness  # Downlight brightness
+        ])
+
+        response = await self._send_and_await_response(data=command)
+        return response[0] == 0x00 if response else False
