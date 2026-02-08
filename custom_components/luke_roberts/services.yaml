@@ -1,0 +1,19 @@
+adjust_brightness:
+  name: Adjust Brightness
+  description: Adjust the lamp brightness relatively (e.g., dim by 10%)
+  target:
+    entity:
+      integration: luke_roberts
+      domain: light
+  fields:
+    delta:
+      name: Delta
+      description: Brightness change in percent (-100 to +100). Positive values increase brightness, negative values decrease.
+      required: true
+      example: -10
+      selector:
+        number:
+          min: -100
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
