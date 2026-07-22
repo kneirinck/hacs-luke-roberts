@@ -68,7 +68,6 @@ class LukeRobertsLuvoBleLight(LightEntity):
         """Initialize an LukeRobertsLuvoBleLight."""
         self._state = None
         self._ble_device = ble_device
-        self._device: BleakClient | None = None
         self._attr_unique_id = ble_device.address
 
         self._effect_map: dict[str, int] = {}
@@ -183,19 +182,22 @@ class LukeRobertsLuvoBleLight(LightEntity):
         This is the only method that should fetch new data for Home Assistant.
         """
         _LOGGER.info("FETCHING DATA")
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
-        _LOGGER.info("GOT CONNECTION")
-        if not self._effect_map:
-            await self._update_effect_list()
-        await self._update_effect()
-        _LOGGER.info("DONE FETCHING DATA")
+        try:
+            _LOGGER.info("GOT CONNECTION")
+            if not self._effect_map:
+                await self._update_effect_list(device)
+            await self._update_effect(device)
+            _LOGGER.info("DONE FETCHING DATA")
+        finally:
+            device.disconnect()
 
-    async def _update_effect_list(self) -> None:
+    async def _update_effect_list(self, device: BleakClient) -> None:
         effect_map = {}
         scene_id = 0
-        scene_data = await self._get_scene(scene_id)
+        scene_data = await self._get_scene(device, scene_id)
         while True:
             if scene_data[0] != 0x00:
                 _LOGGER.warning("Failed to retrieve scene data for %d", scene_id)
@@ -207,14 +209,14 @@ class LukeRobertsLuvoBleLight(LightEntity):
             if scene_id == 0xFF:
                 # No more scenes, we're done
                 break
-            scene_data = await self._get_scene(scene_id)
+            scene_data = await self._get_scene(device, scene_id)
         self._effect_map = effect_map
 
-    async def _get_scene(self, id: int) -> bytearray:
+    async def _get_scene(self, device: BleakClient, id: int) -> bytearray:
         _LOGGER.info("Getting scene %d", id)
-        return await self._send_and_await_response(data=b"\xa0\x01\x01" + bytes([id]))
+        return await self._send_and_await_response(device, data=b"\xa0\x01\x01" + bytes([id]))
 
-    async def _send_and_await_response(self, data: bytearray) -> bytearray:
+    async def _send_and_await_response(self, device: BleakClient, data: bytearray) -> bytearray:
         data_received_flag = asyncio.Event()
         received_data = bytearray()
 
@@ -223,27 +225,31 @@ class LukeRobertsLuvoBleLight(LightEntity):
             received_data = data
             data_received_flag.set()
 
-        await self._device.start_notify(API_UUID, handle_notification)
-        await self._device.write_gatt_char(API_UUID, data=data, response=True)
+        await device.start_notify(API_UUID, handle_notification)
+        await device.write_gatt_char(API_UUID, data=data, response=True)
         await data_received_flag.wait()
-        await self._device.stop_notify(API_UUID)
+        await device.stop_notify(API_UUID)
         return received_data
 
-    async def _update_effect(self) -> None:
-        current_scene_id_byte_array = await self._device.read_gatt_char(SCENE_UUID)
+    async def _update_effect(self, device: BleakClient) -> None:
+        current_scene_id_byte_array = await device.read_gatt_char(SCENE_UUID)
         current_scene_id = int.from_bytes(current_scene_id_byte_array)
         _LOGGER.info("Current scene id %s", current_scene_id)
         self._effect = self._get_effect_name_by_id(current_scene_id)
         _LOGGER.info("Current scene name %s", self._effect)
 
     async def _set_effect(self, effect_id: int) -> bool:
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
-        response = await self._send_and_await_response(
-            data=b"\xa0\x02\x05" + bytes([effect_id])
-        )
-        return response == 0x00
+        try:
+            response = await self._send_and_await_response(
+                device,
+                data=b"\xa0\x02\x05" + bytes([effect_id])
+            )
+            return response == 0x00
+        finally:
+            device.disconnect()
 
     def _get_effect_name_by_id(self, effect_id: int) -> str | None:
         for name, id in self._effect_map.items():
@@ -254,14 +260,17 @@ class LukeRobertsLuvoBleLight(LightEntity):
     async def _set_brightness(self, brightness_percent: int) -> bool:
         """Set the brightness of the lamp (0-100%)."""
         _LOGGER.info("Setting brightness to %d%%", brightness_percent)
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
-        # Command: A0 01 03 PP (Modify Brightness)
-        # PP = brightness in percent 0-100
-        command = bytes([0xA0, 0x01, 0x03, brightness_percent])
-        response = await self._send_and_await_response(data=command)
-        return response[0] == 0x00 if response else False
+        try:
+            # Command: A0 01 03 PP (Modify Brightness)
+            # PP = brightness in percent 0-100
+            command = bytes([0xA0, 0x01, 0x03, brightness_percent])
+            response = await self._send_and_await_response(device, data=command)
+            return response[0] == 0x00 if response else False
+        finally:
+            device.disconnect()
 
     async def _set_uplight_color(self, hue: float, saturation: float, brightness: int) -> bool:
         """Set the uplight (top) color using HSB.
@@ -272,39 +281,42 @@ class LukeRobertsLuvoBleLight(LightEntity):
             brightness: 0-255 (HA brightness)
         """
         _LOGGER.info("Setting uplight color: hue=%f, sat=%f, bright=%d", hue, saturation, brightness)
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
 
-        # Convert hue from 0-360 to 0-65535
-        hue_int = int((hue / 360) * 65535)
-        hue_bytes = hue_int.to_bytes(2, byteorder='big')
+        try:
+            # Convert hue from 0-360 to 0-65535
+            hue_int = int((hue / 360) * 65535)
+            hue_bytes = hue_int.to_bytes(2, byteorder='big')
 
-        # Convert saturation from 0-100 to 0-255
-        saturation_byte = int((saturation / 100) * 255)
+            # Convert saturation from 0-100 to 0-255
+            saturation_byte = int((saturation / 100) * 255)
 
-        # Convert brightness from 0-255 HA to 0-255 API
-        brightness_byte = brightness
+            # Convert brightness from 0-255 HA to 0-255 API
+            brightness_byte = brightness
 
-        # Duration: 0 for infinite
-        duration_bytes = (0).to_bytes(2, byteorder='big')
+            # Duration: 0 for infinite
+            duration_bytes = (0).to_bytes(2, byteorder='big')
 
-        # Command: A0 01 02 XX DD DD SS HH HH BB
-        # XX = 0x01 (uplight flag)
-        # DD DD = duration in ms
-        # SS = saturation 0-255
-        # HH HH = hue 0-65535
-        # BB = brightness 0-255
-        command = bytes([
-            0xA0, 0x01, 0x02, 0x01,  # Prefix, version, opcode, flags
-            duration_bytes[0], duration_bytes[1],  # Duration
-            saturation_byte,  # Saturation
-            hue_bytes[0], hue_bytes[1],  # Hue
-            brightness_byte  # Brightness
-        ])
+            # Command: A0 01 02 XX DD DD SS HH HH BB
+            # XX = 0x01 (uplight flag)
+            # DD DD = duration in ms
+            # SS = saturation 0-255
+            # HH HH = hue 0-65535
+            # BB = brightness 0-255
+            command = bytes([
+                0xA0, 0x01, 0x02, 0x01,  # Prefix, version, opcode, flags
+                duration_bytes[0], duration_bytes[1],  # Duration
+                saturation_byte,  # Saturation
+                hue_bytes[0], hue_bytes[1],  # Hue
+                brightness_byte  # Brightness
+            ])
 
-        response = await self._send_and_await_response(data=command)
-        return response[0] == 0x00 if response else False
+            response = await self._send_and_await_response(device, data=command)
+            return response[0] == 0x00 if response else False
+        finally:
+            device.disconnect()
 
     async def _set_downlight_color_temp(self, kelvin: int, brightness: int) -> bool:
         """Set the downlight (bottom) color temperature.
@@ -314,34 +326,37 @@ class LukeRobertsLuvoBleLight(LightEntity):
             brightness: 0-255 (HA brightness)
         """
         _LOGGER.info("Setting downlight color temp: kelvin=%d, bright=%d", kelvin, brightness)
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
 
-        # Clamp kelvin to valid range
-        kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
-        kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
+        try:
+            # Clamp kelvin to valid range
+            kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
+            kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
 
-        # Convert brightness from 0-255 HA to 0-255 API
-        brightness_byte = brightness
+            # Convert brightness from 0-255 HA to 0-255 API
+            brightness_byte = brightness
 
-        # Duration: 0 for infinite
-        duration_bytes = (0).to_bytes(2, byteorder='big')
+            # Duration: 0 for infinite
+            duration_bytes = (0).to_bytes(2, byteorder='big')
 
-        # Command: A0 01 02 XX DD DD KK KK BB
-        # XX = 0x02 (downlight flag)
-        # DD DD = duration in ms
-        # KK KK = kelvin 2700-4000
-        # BB = brightness 0-255
-        command = bytes([
-            0xA0, 0x01, 0x02, 0x02,  # Prefix, version, opcode, flags
-            duration_bytes[0], duration_bytes[1],  # Duration
-            kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
-            brightness_byte  # Brightness
-        ])
+            # Command: A0 01 02 XX DD DD KK KK BB
+            # XX = 0x02 (downlight flag)
+            # DD DD = duration in ms
+            # KK KK = kelvin 2700-4000
+            # BB = brightness 0-255
+            command = bytes([
+                0xA0, 0x01, 0x02, 0x02,  # Prefix, version, opcode, flags
+                duration_bytes[0], duration_bytes[1],  # Duration
+                kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
+                brightness_byte  # Brightness
+            ])
 
-        response = await self._send_and_await_response(data=command)
-        return response[0] == 0x00 if response else False
+            response = await self._send_and_await_response(device, data=command)
+            return response[0] == 0x00 if response else False
+        finally:
+            device.disconnect()
 
     async def _set_both_lights(
         self,
@@ -364,37 +379,40 @@ class LukeRobertsLuvoBleLight(LightEntity):
             "Setting both lights: hue=%f, sat=%f, up_bright=%d, kelvin=%d, down_bright=%d",
             hue, saturation, uplight_brightness, kelvin, downlight_brightness
         )
-        self._device = await bleak_retry_connector.establish_connection(
+        device = await bleak_retry_connector.establish_connection(
             BleakClient, self._ble_device, self.unique_id
         )
 
-        # Uplight parameters
-        hue_int = int((hue / 360) * 65535)
-        hue_bytes = hue_int.to_bytes(2, byteorder='big')
-        saturation_byte = int((saturation / 100) * 255)
+        try:
+            # Uplight parameters
+            hue_int = int((hue / 360) * 65535)
+            hue_bytes = hue_int.to_bytes(2, byteorder='big')
+            saturation_byte = int((saturation / 100) * 255)
 
-        # Downlight parameters
-        kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
-        kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
+            # Downlight parameters
+            kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
+            kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
 
-        # Duration: 0 for infinite
-        duration_bytes = (0).to_bytes(2, byteorder='big')
+            # Duration: 0 for infinite
+            duration_bytes = (0).to_bytes(2, byteorder='big')
 
-        # Command: A0 01 02 03 DD DD SS HH HH BB KK KK BB
-        # Flag 0x03 = uplight (0x01) + downlight (0x02)
-        # First sub-packet: uplight (SS HH HH BB)
-        # Second sub-packet: downlight (KK KK BB)
-        command = bytes([
-            0xA0, 0x01, 0x02, 0x03,  # Prefix, version, opcode, flags (both)
-            duration_bytes[0], duration_bytes[1],  # Duration
-            # Uplight sub-packet
-            saturation_byte,  # Saturation
-            hue_bytes[0], hue_bytes[1],  # Hue
-            uplight_brightness,  # Uplight brightness
-            # Downlight sub-packet
-            kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
-            downlight_brightness  # Downlight brightness
-        ])
+            # Command: A0 01 02 03 DD DD SS HH HH BB KK KK BB
+            # Flag 0x03 = uplight (0x01) + downlight (0x02)
+            # First sub-packet: uplight (SS HH HH BB)
+            # Second sub-packet: downlight (KK KK BB)
+            command = bytes([
+                0xA0, 0x01, 0x02, 0x03,  # Prefix, version, opcode, flags (both)
+                duration_bytes[0], duration_bytes[1],  # Duration
+                # Uplight sub-packet
+                saturation_byte,  # Saturation
+                hue_bytes[0], hue_bytes[1],  # Hue
+                uplight_brightness,  # Uplight brightness
+                # Downlight sub-packet
+                kelvin_bytes[0], kelvin_bytes[1],  # Kelvin
+                downlight_brightness  # Downlight brightness
+            ])
 
-        response = await self._send_and_await_response(data=command)
-        return response[0] == 0x00 if response else False
+            response = await self._send_and_await_response(device, data=command)
+            return response[0] == 0x00 if response else False
+        finally:
+            device.disconnect()
