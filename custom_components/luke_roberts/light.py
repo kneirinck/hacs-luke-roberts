@@ -192,7 +192,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             await self._update_effect(device)
             _LOGGER.info("DONE FETCHING DATA")
         finally:
-            device.disconnect()
+            await device.disconnect()
 
     async def _update_effect_list(self, device: BleakClient) -> None:
         effect_map = {}
@@ -249,7 +249,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             )
             return response == 0x00
         finally:
-            device.disconnect()
+            await device.disconnect()
 
     def _get_effect_name_by_id(self, effect_id: int) -> str | None:
         for name, id in self._effect_map.items():
@@ -270,7 +270,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
-            device.disconnect()
+            await device.disconnect()
 
     async def _set_uplight_color(self, hue: float, saturation: float, brightness: int) -> bool:
         """Set the uplight (top) color using HSB.
@@ -316,7 +316,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
-            device.disconnect()
+            await device.disconnect()
 
     async def _set_downlight_color_temp(self, kelvin: int, brightness: int) -> bool:
         """Set the downlight (bottom) color temperature.
@@ -356,7 +356,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
-            device.disconnect()
+            await device.disconnect()
 
     async def _set_both_lights(
         self,
@@ -415,4 +415,4 @@ class LukeRobertsLuvoBleLight(LightEntity):
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
-            device.disconnect()
+            await device.disconnect()
