@@ -71,7 +71,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         self._attr_unique_id = ble_device.address
 
         self._effect_map: dict[str, int] = {}
-        self._effect = None
+        self._effect: str | None = None
 
         # Brightness (0-255 for HA, we'll convert to 0-100 for API)
         self._brightness: int = 255
@@ -116,9 +116,9 @@ class LukeRobertsLuvoBleLight(LightEntity):
     def is_on(self) -> bool | None:
         """Return true if light is on."""
         _LOGGER.info(
-            "Current effect %s %s", self._effect, self._effect_map.get(self._effect)
+            "Current effect %s %s", self._effect, self._effect_map.get(self._effect or "", -1)
         )
-        return self._effect_map.get(self._effect) != 0
+        return self._effect is not None and self._effect_map.get(self._effect) != 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Instruct the light to turn on."""
@@ -127,7 +127,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         # Handle effect selection
         if ATTR_EFFECT in kwargs:
             effect_name = kwargs.get(ATTR_EFFECT)
-            effect_id = self._effect_map.get(effect_name)
+            effect_id =  self._effect_map.get(effect_name) if isinstance(effect_name, str) else None
             if effect_id is None:
                 return
 
