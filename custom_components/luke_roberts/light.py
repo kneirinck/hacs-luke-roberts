@@ -214,7 +214,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
     async def _get_scene(self, device: BleakClient, id: int) -> bytearray:
         _LOGGER.info("Getting scene %d", id)
-        return await self._send_and_await_response(device, data=b"\xa0\x01\x01" + bytes([id]))
+        return await self._send_and_await_response(device, data=bytearray(b"\xa0\x01\x01" + bytes([id])))
 
     async def _send_and_await_response(self, device: BleakClient, data: bytearray) -> bytearray:
         data_received_flag = asyncio.Event()
@@ -245,7 +245,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         try:
             response = await self._send_and_await_response(
                 device,
-                data=b"\xa0\x02\x05" + bytes([effect_id])
+                data=bytearray(b"\xa0\x02\x05" + bytes([effect_id]))
             )
             return response == 0x00
         finally:
@@ -267,7 +267,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             # Command: A0 01 03 PP (Modify Brightness)
             # PP = brightness in percent 0-100
             command = bytes([0xA0, 0x01, 0x03, brightness_percent])
-            response = await self._send_and_await_response(device, data=command)
+            response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
             device.disconnect()
@@ -313,7 +313,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 brightness_byte  # Brightness
             ])
 
-            response = await self._send_and_await_response(device, data=command)
+            response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
             device.disconnect()
@@ -353,7 +353,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 brightness_byte  # Brightness
             ])
 
-            response = await self._send_and_await_response(device, data=command)
+            response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
             device.disconnect()
@@ -412,7 +412,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 downlight_brightness  # Downlight brightness
             ])
 
-            response = await self._send_and_await_response(device, data=command)
+            response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         finally:
             device.disconnect()
