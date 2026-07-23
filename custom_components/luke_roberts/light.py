@@ -182,17 +182,23 @@ class LukeRobertsLuvoBleLight(LightEntity):
         This is the only method that should fetch new data for Home Assistant.
         """
         _LOGGER.info("FETCHING DATA")
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
+
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
+            self._attr_available = True
             _LOGGER.info("GOT CONNECTION")
             if not self._effect_map:
                 await self._update_effect_list(device)
             await self._update_effect(device)
             _LOGGER.info("DONE FETCHING DATA")
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error updating light: %s", e)
+            self._attr_available = True
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
 
     async def _update_effect_list(self, device: BleakClient) -> None:
         effect_map = {}
@@ -239,17 +245,20 @@ class LukeRobertsLuvoBleLight(LightEntity):
         _LOGGER.info("Current scene name %s", self._effect)
 
     async def _set_effect(self, effect_id: int) -> bool:
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
             response = await self._send_and_await_response(
                 device,
                 data=bytearray(b"\xa0\x02\x05" + bytes([effect_id]))
             )
             return response == 0x00
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error setting light effect: %s", e)
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
 
     def _get_effect_name_by_id(self, effect_id: int) -> str | None:
         for name, id in self._effect_map.items():
@@ -260,17 +269,20 @@ class LukeRobertsLuvoBleLight(LightEntity):
     async def _set_brightness(self, brightness_percent: int) -> bool:
         """Set the brightness of the lamp (0-100%)."""
         _LOGGER.info("Setting brightness to %d%%", brightness_percent)
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
             # Command: A0 01 03 PP (Modify Brightness)
             # PP = brightness in percent 0-100
             command = bytes([0xA0, 0x01, 0x03, brightness_percent])
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error setting light brightness: %s", e)
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
 
     async def _set_uplight_color(self, hue: float, saturation: float, brightness: int) -> bool:
         """Set the uplight (top) color using HSB.
@@ -281,11 +293,12 @@ class LukeRobertsLuvoBleLight(LightEntity):
             brightness: 0-255 (HA brightness)
         """
         _LOGGER.info("Setting uplight color: hue=%f, sat=%f, bright=%d", hue, saturation, brightness)
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
 
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
+
             # Convert hue from 0-360 to 0-65535
             hue_int = int((hue / 360) * 65535)
             hue_bytes = hue_int.to_bytes(2, byteorder='big')
@@ -315,8 +328,11 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error setting light up color: %s", e)
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
 
     async def _set_downlight_color_temp(self, kelvin: int, brightness: int) -> bool:
         """Set the downlight (bottom) color temperature.
@@ -326,11 +342,12 @@ class LukeRobertsLuvoBleLight(LightEntity):
             brightness: 0-255 (HA brightness)
         """
         _LOGGER.info("Setting downlight color temp: kelvin=%d, bright=%d", kelvin, brightness)
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
 
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
+
             # Clamp kelvin to valid range
             kelvin = max(self.MIN_KELVIN, min(self.MAX_KELVIN, kelvin))
             kelvin_bytes = kelvin.to_bytes(2, byteorder='big')
@@ -355,8 +372,11 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error setting light down color: %s", e)
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
 
     async def _set_both_lights(
         self,
@@ -379,11 +399,12 @@ class LukeRobertsLuvoBleLight(LightEntity):
             "Setting both lights: hue=%f, sat=%f, up_bright=%d, kelvin=%d, down_bright=%d",
             hue, saturation, uplight_brightness, kelvin, downlight_brightness
         )
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self.unique_id
-        )
 
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self.unique_id
+            )
+
             # Uplight parameters
             hue_int = int((hue / 360) * 65535)
             hue_bytes = hue_int.to_bytes(2, byteorder='big')
@@ -414,5 +435,8 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
             response = await self._send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error setting light color: %s", e)
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()

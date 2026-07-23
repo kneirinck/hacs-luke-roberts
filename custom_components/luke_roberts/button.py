@@ -35,7 +35,7 @@ async def async_setup_entry(
         raise ConfigEntryNotReady(
             f"Unable to find device with address {entry.unique_id}, ensure it's powered on"
         )
-    
+
     async_add_entities([
         LukeRobertsSceneButton(ble_device, "brighter"),
         LukeRobertsSceneButton(ble_device, "dimmer"),
@@ -49,13 +49,13 @@ class LukeRobertsSceneButton(ButtonEntity):
         """Initialize the button."""
         self._ble_device = ble_device
         self._direction = direction
-        
+
         # Direction: 0x01 for brighter, 0xFF (-1 signed) for dimmer
         self._direction_byte = 0x01 if direction == "brighter" else 0xFF
-        
+
         self._attr_unique_id = f"{ble_device.address}_{direction}_scene"
         self._attr_name = f"Next {'Brighter' if direction == 'brighter' else 'Dimmer'} Scene"
-        
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, ble_device.address)},
             manufacturer="Luke Roberts",
@@ -66,15 +66,20 @@ class LukeRobertsSceneButton(ButtonEntity):
     async def async_press(self) -> None:
         """Handle button press - cycle to next scene."""
         _LOGGER.info("Pressing %s scene button", self._direction)
-        
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self._attr_unique_id
-        )
-        
+
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self._attr_unique_id
+            )
+            self._attr_available = True
+
             # Command: A0 02 06 DD (Next Scene by Brightness)
             # DD = 0x01 for brighter, 0xFF for dimmer
             command = bytes([0xA0, 0x02, 0x06, self._direction_byte])
             await device.write_gatt_char(API_UUID, data=command, response=True)
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error pressing button: %s", e)
+            self._attr_available = False
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()

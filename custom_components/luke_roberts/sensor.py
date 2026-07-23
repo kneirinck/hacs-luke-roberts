@@ -37,7 +37,7 @@ async def async_setup_entry(
         raise ConfigEntryNotReady(
             f"Unable to find device with address {entry.unique_id}, ensure it's powered on"
         )
-    
+
     async_add_entities([LukeRobertsApiVersionSensor(ble_device)])
 
 
@@ -51,10 +51,10 @@ class LukeRobertsApiVersionSensor(SensorEntity):
         """Initialize the sensor."""
         self._ble_device = ble_device
         self._api_version: int | None = None
-        
+
         self._attr_unique_id = f"{ble_device.address}_api_version"
         self._attr_name = "API Version"
-        
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, ble_device.address)},
             manufacturer="Luke Roberts",
@@ -70,36 +70,40 @@ class LukeRobertsApiVersionSensor(SensorEntity):
     async def async_update(self) -> None:
         """Fetch API version from device."""
         _LOGGER.info("Fetching API version")
-        
-        device = await bleak_retry_connector.establish_connection(
-            BleakClient, self._ble_device, self._attr_unique_id
-        )
-        
+
         try:
+            device = await bleak_retry_connector.establish_connection(
+                BleakClient, self._ble_device, self._attr_unique_id
+            )
+            self._attr_available = True
+
             # Send Ping V2 command and await response
             data_received = asyncio.Event()
             received_data = bytearray()
-            
+
             def handle_notification(_: BleakGATTCharacteristic, data: bytearray):
                 nonlocal received_data
                 received_data = data
                 data_received.set()
-            
+
             await device.start_notify(API_UUID, handle_notification)
-            
+
             # Command: A0 02 00 (Ping V2)
             command = bytes([0xA0, 0x02, 0x00])
             await device.write_gatt_char(API_UUID, data=command, response=True)
-            
+
             await data_received.wait()
             await device.stop_notify(API_UUID)
-            
+
             # Response: 00 VV (status, version)
             if len(received_data) >= 2 and received_data[0] == 0x00:
                 self._api_version = received_data[1]
                 _LOGGER.info("API version: %d", self._api_version)
             else:
                 _LOGGER.warning("Unexpected ping response: %s", received_data.hex())
-                
+        except bleak_retry_connector.BleakError as e:
+            _LOGGER.error("Error updating sensor: %s", e)
+            self._attr_available = False
         finally:
-            await device.disconnect()
+            if device:
+                await device.disconnect()
