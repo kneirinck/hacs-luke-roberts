@@ -71,6 +71,7 @@ class LukeRobertsApiVersionSensor(SensorEntity):
         """Fetch API version from device."""
         _LOGGER.info("Fetching API version")
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self._attr_unique_id

@@ -67,6 +67,7 @@ class LukeRobertsSceneButton(ButtonEntity):
         """Handle button press - cycle to next scene."""
         _LOGGER.info("Pressing %s scene button", self._direction)
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self._attr_unique_id

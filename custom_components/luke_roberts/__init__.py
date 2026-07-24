@@ -94,16 +94,19 @@ async def _adjust_brightness(ble_device: BLEDevice, delta: int) -> None:
     """Adjust brightness relatively using command 08."""
     _LOGGER.info("Adjusting brightness by %d%%", delta)
 
-    device = await bleak_retry_connector.establish_connection(
-        BleakClient, ble_device, ble_device.address
-    )
-
+    device = None
     try:
+        device = await bleak_retry_connector.establish_connection(
+            BleakClient, ble_device, ble_device.address
+        )
         # Command: A0 02 08 PP (Relative Brightness)
         # PP = signed int8 (-100 to +100)
         delta_byte = delta & 0xFF  # Convert to unsigned byte representation
         command = bytes([0xA0, 0x02, 0x08, delta_byte])
         await device.write_gatt_char(API_UUID, data=command, response=True)
+    except bleak_retry_connector.BleakError as e:
+        _LOGGER.error("Error updating brightness: %s", e)
+        self._attr_available = False
     finally:
         await device.disconnect()
 

@@ -183,6 +183,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         """
         _LOGGER.info("FETCHING DATA")
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
@@ -245,6 +246,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         _LOGGER.info("Current scene name %s", self._effect)
 
     async def _set_effect(self, effect_id: int) -> bool:
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
@@ -269,6 +271,8 @@ class LukeRobertsLuvoBleLight(LightEntity):
     async def _set_brightness(self, brightness_percent: int) -> bool:
         """Set the brightness of the lamp (0-100%)."""
         _LOGGER.info("Setting brightness to %d%%", brightness_percent)
+
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
@@ -294,6 +298,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         """
         _LOGGER.info("Setting uplight color: hue=%f, sat=%f, bright=%d", hue, saturation, brightness)
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
@@ -343,6 +348,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
         """
         _LOGGER.info("Setting downlight color temp: kelvin=%d, bright=%d", kelvin, brightness)
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
@@ -400,6 +406,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             hue, saturation, uplight_brightness, kelvin, downlight_brightness
         )
 
+        device = None
         try:
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
