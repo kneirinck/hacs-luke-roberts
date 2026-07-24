@@ -17,7 +17,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import API_UUID, DOMAIN
+from .const import DOMAIN
+from .light import LukeRobertsLuvoBleLight
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,8 +77,8 @@ class LukeRobertsSceneButton(ButtonEntity):
 
             # Command: A0 02 06 DD (Next Scene by Brightness)
             # DD = 0x01 for brighter, 0xFF for dimmer
-            command = bytes([0xA0, 0x02, 0x06, self._direction_byte])
-            await device.write_gatt_char(API_UUID, data=command, response=True)
+            command = bytearray([0xA0, 0x02, 0x06, self._direction_byte])
+            await LukeRobertsLuvoBleLight.send_and_await_response(device, command)
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error pressing button: %s", e)
             self._attr_available = False

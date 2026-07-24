@@ -16,7 +16,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 
-from .const import DOMAIN, API_UUID
+from .const import DOMAIN
+from .light import LukeRobertsLuvoBleLight
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,11 +103,10 @@ async def _adjust_brightness(ble_device: BLEDevice, delta: int) -> None:
         # Command: A0 02 08 PP (Relative Brightness)
         # PP = signed int8 (-100 to +100)
         delta_byte = delta & 0xFF  # Convert to unsigned byte representation
-        command = bytes([0xA0, 0x02, 0x08, delta_byte])
-        await device.write_gatt_char(API_UUID, data=command, response=True)
+        command = bytearray([0xA0, 0x02, 0x08, delta_byte])
+        await LukeRobertsLuvoBleLight.send_and_await_response(device, command)
     except bleak_retry_connector.BleakError as e:
         _LOGGER.error("Error updating brightness: %s", e)
-        self._attr_available = False
     finally:
         await device.disconnect()
 

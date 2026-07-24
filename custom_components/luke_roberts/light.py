@@ -201,6 +201,22 @@ class LukeRobertsLuvoBleLight(LightEntity):
             if device:
                 await device.disconnect()
 
+    @staticmethod
+    async def send_and_await_response(device: BleakClient, data: bytearray) -> bytearray:
+        data_received_flag = asyncio.Event()
+        received_data = bytearray()
+
+        def handle_notification(_: BleakGATTCharacteristic, data: bytearray):
+            nonlocal received_data
+            received_data = data
+            data_received_flag.set()
+
+        await device.start_notify(API_UUID, handle_notification)
+        await device.write_gatt_char(API_UUID, data=data, response=True)
+        await data_received_flag.wait()
+        await device.stop_notify(API_UUID)
+        return received_data
+
     async def _update_effect_list(self, device: BleakClient) -> None:
         effect_map = {}
         scene_id = 0
@@ -221,22 +237,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
 
     async def _get_scene(self, device: BleakClient, id: int) -> bytearray:
         _LOGGER.info("Getting scene %d", id)
-        return await self._send_and_await_response(device, data=bytearray(b"\xa0\x01\x01" + bytes([id])))
-
-    async def _send_and_await_response(self, device: BleakClient, data: bytearray) -> bytearray:
-        data_received_flag = asyncio.Event()
-        received_data = bytearray()
-
-        def handle_notification(_: BleakGATTCharacteristic, data: bytearray):
-            nonlocal received_data
-            received_data = data
-            data_received_flag.set()
-
-        await device.start_notify(API_UUID, handle_notification)
-        await device.write_gatt_char(API_UUID, data=data, response=True)
-        await data_received_flag.wait()
-        await device.stop_notify(API_UUID)
-        return received_data
+        return await LukeRobertsLuvoBleLight.send_and_await_response(device, data=bytearray(b"\xa0\x01\x01" + bytes([id])))
 
     async def _update_effect(self, device: BleakClient) -> None:
         current_scene_id_byte_array = await device.read_gatt_char(SCENE_UUID)
@@ -251,7 +252,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
             )
-            response = await self._send_and_await_response(
+            response = await LukeRobertsLuvoBleLight.send_and_await_response(
                 device,
                 data=bytearray(b"\xa0\x02\x05" + bytes([effect_id]))
             )
@@ -280,7 +281,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             # Command: A0 01 03 PP (Modify Brightness)
             # PP = brightness in percent 0-100
             command = bytes([0xA0, 0x01, 0x03, brightness_percent])
-            response = await self._send_and_await_response(device, data=bytearray(command))
+            response = await LukeRobertsLuvoBleLight.send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error setting light brightness: %s", e)
@@ -331,7 +332,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 brightness_byte  # Brightness
             ])
 
-            response = await self._send_and_await_response(device, data=bytearray(command))
+            response = await LukeRobertsLuvoBleLight.send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error setting light up color: %s", e)
@@ -376,7 +377,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 brightness_byte  # Brightness
             ])
 
-            response = await self._send_and_await_response(device, data=bytearray(command))
+            response = await LukeRobertsLuvoBleLight.send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error setting light down color: %s", e)
@@ -440,7 +441,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
                 downlight_brightness  # Downlight brightness
             ])
 
-            response = await self._send_and_await_response(device, data=bytearray(command))
+            response = await LukeRobertsLuvoBleLight.send_and_await_response(device, data=bytearray(command))
             return response[0] == 0x00 if response else False
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error setting light color: %s", e)

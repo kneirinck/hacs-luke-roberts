@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from bleak import BleakClient, BleakGATTCharacteristic
+from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 import bleak_retry_connector
 
@@ -19,7 +18,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import API_UUID, DOMAIN
+from .const import DOMAIN
+from .light import LukeRobertsLuvoBleLight
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,22 +79,9 @@ class LukeRobertsApiVersionSensor(SensorEntity):
             self._attr_available = True
 
             # Send Ping V2 command and await response
-            data_received = asyncio.Event()
-            received_data = bytearray()
-
-            def handle_notification(_: BleakGATTCharacteristic, data: bytearray):
-                nonlocal received_data
-                received_data = data
-                data_received.set()
-
-            await device.start_notify(API_UUID, handle_notification)
-
             # Command: A0 02 00 (Ping V2)
-            command = bytes([0xA0, 0x02, 0x00])
-            await device.write_gatt_char(API_UUID, data=command, response=True)
-
-            await data_received.wait()
-            await device.stop_notify(API_UUID)
+            command = bytearray([0xA0, 0x02, 0x00])
+            received_data = await LukeRobertsLuvoBleLight.send_and_await_response(device, command)
 
             # Response: 00 VV (status, version)
             if len(received_data) >= 2 and received_data[0] == 0x00:
