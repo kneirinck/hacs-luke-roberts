@@ -196,7 +196,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
             _LOGGER.info("DONE FETCHING DATA")
         except bleak_retry_connector.BleakError as e:
             _LOGGER.error("Error updating light: %s", e)
-            self._attr_available = True
+            self._attr_available = False
         finally:
             if device:
                 await device.disconnect()
