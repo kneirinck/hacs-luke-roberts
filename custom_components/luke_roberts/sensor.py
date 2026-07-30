@@ -46,6 +46,7 @@ class LukeRobertsApiVersionSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _unavailable_logged: bool = False
 
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialize the sensor."""
@@ -76,6 +77,12 @@ class LukeRobertsApiVersionSensor(SensorEntity):
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self._attr_unique_id
             )
+        except bleak_retry_connector.BleakError as e:
+            self._attr_available = False
+            if not self._unavailable_logged:
+                _LOGGER.info("API version sensor is unavailable: %s", ex)
+                self._unavailable_logged = True
+        else:
             self._attr_available = True
 
             # Send Ping V2 command and await response
@@ -89,9 +96,10 @@ class LukeRobertsApiVersionSensor(SensorEntity):
                 _LOGGER.info("API version: %d", self._api_version)
             else:
                 _LOGGER.warning("Unexpected ping response: %s", received_data.hex())
-        except bleak_retry_connector.BleakError as e:
-            _LOGGER.error("Error updating sensor: %s", e)
-            self._attr_available = False
+
+            if self._unavailable_logged:
+                _LOGGER.info("API version sensor is back online")
+                self._unavailable_logged = False
         finally:
             if device:
                 await device.disconnect()

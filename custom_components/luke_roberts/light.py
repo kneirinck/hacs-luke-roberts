@@ -63,6 +63,7 @@ class LukeRobertsLuvoBleLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.HS, ColorMode.COLOR_TEMP}
     _attr_min_color_temp_kelvin = 2700
     _attr_max_color_temp_kelvin = 4000
+    _unavailable_logged: bool = False
 
     def __init__(self, ble_device: BLEDevice) -> None:
         """Initialize an LukeRobertsLuvoBleLight."""
@@ -188,15 +189,21 @@ class LukeRobertsLuvoBleLight(LightEntity):
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self.unique_id
             )
+        except bleak_retry_connector.BleakError as ex:
+            self._attr_available = False
+            if not self._unavailable_logged:
+                _LOGGER.info("Light is unavailable: %s", ex)
+                self._unavailable_logged = True
+        else:
             self._attr_available = True
             _LOGGER.info("GOT CONNECTION")
             if not self._effect_map:
                 await self._update_effect_list(device)
             await self._update_effect(device)
             _LOGGER.info("DONE FETCHING DATA")
-        except bleak_retry_connector.BleakError as e:
-            _LOGGER.error("Error updating light: %s", e)
-            self._attr_available = False
+            if self._unavailable_logged:
+                _LOGGER.info("The light is back online")
+                self._unavailable_logged = False
         finally:
             if device:
                 await device.disconnect()
