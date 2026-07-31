@@ -77,7 +77,7 @@ class LukeRobertsApiVersionSensor(SensorEntity):
             device = await bleak_retry_connector.establish_connection(
                 BleakClient, self._ble_device, self._attr_unique_id
             )
-        except bleak_retry_connector.BleakError as e:
+        except bleak_retry_connector.BleakError as ex:
             self._attr_available = False
             if not self._unavailable_logged:
                 _LOGGER.info("API version sensor is unavailable: %s", ex)
